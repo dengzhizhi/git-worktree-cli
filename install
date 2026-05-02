@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ── Paths ──────────────────────────────────────────────────────────────────────
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKTREE_BIN="$SCRIPT_DIR/worktree"
+
+if [ ! -x "$WORKTREE_BIN" ]; then
+  echo "install: cannot find executable 'worktree' at $WORKTREE_BIN" >&2
+  exit 1
+fi
+
+# ── Config directory (XDG-aware) ───────────────────────────────────────────────
+if [ -n "${XDG_CONFIG_HOME:-}" ]; then
+  CONFIG_DIR="$XDG_CONFIG_HOME/worktree"
+else
+  CONFIG_DIR="$HOME/.config/worktree"
+fi
+mkdir -p "$CONFIG_DIR"
+
+WT_SH="$CONFIG_DIR/wt.sh"
+
+# ── Generate wt.sh ─────────────────────────────────────────────────────────────
+# _wt_cd: quoted heredoc — no variable expansion, no escaping needed
+cat > "$WT_SH" << 'WTSEOF'
+# Requires bash or zsh — not compatible with POSIX sh / dash.
+function _wt_cd() {
+  local branch="${1:-}"
+
+  local porcelain
+  if ! porcelain=$(git worktree list --porcelain 2>/dev/null); then
+    echo "wt cd: not in a git repository" >&2
+    return 1
+  fi
+
+  local cur_dir
+  cur_dir=$(pwd)
+
+  # Parse all worktrees into 1-indexed parallel arrays (compatible with bash and zsh)
+  local -a all_paths all_branches all_heads
+  local total=0 cur_path="" cur_head="" cur_branch=""
+
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*)  cur_path="${line#worktree }"; cur_head=""; cur_branch="" ;;
+      "HEAD "*)      cur_head="${line#HEAD }" ;;
+      "branch "*)    cur_branch="${line#branch refs/heads/}" ;;
+      "detached")    cur_branch="" ;;
+      "")
+        if [ -n "$cur_path" ]; then
+          total=$((total+1))
+          all_paths[$total]="$cur_path"
+          all_heads[$total]="$cur_head"
+          all_branches[$total]="$cur_branch"
+          cur_path=""
+        fi
+        ;;
+    esac
+  done < <(printf '%s\n\n' "$porcelain")  # extra blank line flushes the last record
+
+  local base_path="${all_paths[1]}"
+
+  # @dev — cd directly to base worktree
+  if [ "$branch" = "@dev" ]; then
+    cd "$base_path" || return 1
+    return 0
+  fi
+
+  # explicit branch name — find and cd
+  if [ -n "$branch" ]; then
+    local i
+    for (( i = 1; i <= total; i++ )); do
+      if [ "${all_branches[$i]}" = "$branch" ]; then
+        cd "${all_paths[$i]}" || return 1
+        return 0
+      fi
+    done
+    echo "wt cd: no worktree for branch '$branch'" >&2
+    return 1
+  fi
+
+  # interactive list — exclude current directory, mark base worktree
+  local -a wt_paths wt_labels wt_suffix
+  local count=0 i label
+  for (( i = 1; i <= total; i++ )); do
+    [ "${all_paths[$i]}" = "$cur_dir" ] && continue
+    count=$((count+1))
+    if [ -n "${all_branches[$i]}" ]; then
+      label="${all_branches[$i]}"
+    else
+      label="(detached at ${all_heads[$i]:0:7})"
+    fi
+    wt_labels[$count]="$label"
+    wt_paths[$count]="${all_paths[$i]}"
+    if [ "${all_paths[$i]}" = "$base_path" ]; then
+      wt_suffix[$count]=" [@dev]"
+    else
+      wt_suffix[$count]=""
+    fi
+  done
+
+  if [ "$count" -eq 0 ]; then
+    echo "wt cd: no other worktrees to navigate to" >&2
+    return 1
+  fi
+
+  echo "Available worktrees:"
+  local j
+  for (( j = 1; j <= count; j++ )); do
+    printf "  %d) %-30s %s%s\n" "$j" "${wt_labels[$j]}" "${wt_paths[$j]}" "${wt_suffix[$j]}"
+  done
+  printf "Select [0-%d] (0 to cancel): " "$count"
+
+  local selection
+  read -r selection
+
+  if ! [[ "$selection" =~ ^[0-9]+$ ]] || \
+     [ "$selection" -gt "$count" ]; then
+    echo "wt cd: invalid selection" >&2
+    return 1
+  fi
+
+  [ "$selection" -eq 0 ] && return 0
+
+  cd "${wt_paths[$selection]}" || return 1
+}
+WTSEOF
+
+# wt dispatcher: unquoted heredoc — $WORKTREE_BIN expands and gets baked in
+cat >> "$WT_SH" << WTSEOF
+
+function wt() {
+  if [ "\${1:-}" = "cd" ]; then
+    _wt_cd "\${@:2}"
+  else
+    "$WORKTREE_BIN" "\$@"
+  fi
+}
+WTSEOF
+
+echo "✓ Written $WT_SH"
+
+# ── Detect rc file ─────────────────────────────────────────────────────────────
+case "$SHELL" in
+  */zsh)  RC_FILE="$HOME/.zshrc"  ;;
+  */bash) RC_FILE="$HOME/.bashrc" ;;
+  *)
+    echo "install: unsupported shell '$SHELL' (supported: bash, zsh)" >&2
+    echo "To complete installation, add the following line to your shell rc file:"
+    echo "  source $WT_SH"
+    exit 1
+    ;;
+esac
+
+# ── Patch rc file (idempotent) ─────────────────────────────────────────────────
+if grep -q "worktree/wt.sh" "$RC_FILE" 2>/dev/null; then
+  echo "✓ $RC_FILE already sources wt.sh (no changes made)"
+else
+  {
+    echo ""
+    echo "# wt — worktree shell function (added by worktree-cli install)"
+    echo "source $WT_SH"
+  } >> "$RC_FILE"
+  echo "✓ Added source line to $RC_FILE"
+fi
+
+# ── Done ───────────────────────────────────────────────────────────────────────
+echo ""
+echo "Installation complete. Restart your shell or run:"
+echo "  source $RC_FILE"

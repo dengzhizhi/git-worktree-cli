@@ -1,0 +1,5 @@
+.promptx/resource/project.registry.json
+.lsp/.cache/db.transit.json
+.clj-kondo/.cache/v1/lock
+.promptx/pouch.json
+.clj-kondo

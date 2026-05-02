@@ -1,0 +1,117 @@
+#!/usr/bin/env bb
+
+(ns worktree.main
+  (:require [babashka.cli :as cli]
+            [commons.help :as help]
+            [commands.new :as cmd-new]
+            [commands.setup :as cmd-setup]
+            [commands.list :as cmd-list]
+            [commands.remove :as cmd-remove]
+            [commands.merge :as cmd-merge]
+            [commands.purge :as cmd-purge]
+            [commands.open :as cmd-open]
+            [commands.config :as cmd-config]))
+
+(def dispatch-table
+  [{:cmds ["new"]
+    :desc "Create a new worktree for the given branch"
+    :fn cmd-new/run
+    :args->opts [:branch-name]
+    :spec {:path      {:alias :p :desc "Path for new worktree"}
+           :checkout  {:alias :c :desc "Create branch if absent" :coerce :boolean :default false}
+           :install   {:alias :i :desc "Package manager (npm, pnpm, bun, yarn)"}}}
+
+   {:cmds ["setup"]
+    :desc "Create a worktree and run its setup scripts"
+    :fn cmd-setup/run
+    :args->opts [:branch-name]
+    :spec {:path      {:alias :p :desc "Path for new worktree"}
+           :checkout  {:alias :c :desc "Create branch if absent" :coerce :boolean :default false}
+           :install   {:alias :i :desc "Package manager"}
+           :trust     {:alias :t :desc "Skip setup confirmation" :coerce :boolean :default false}}}
+
+   {:cmds ["list"]
+    :desc "List all worktrees"
+    :fn cmd-list/run
+    :spec {:name-only {:desc "Output branch names only (fzf-friendly)" :coerce :boolean :default false}
+           :dir-only  {:desc "Output paths only (fzf-friendly)"        :coerce :boolean :default false}}}
+
+   {:cmds ["ls"]
+    :desc "List all worktrees (alias for 'list')"
+    :fn cmd-list/run
+    :spec {:name-only {:desc "Output branch names only (fzf-friendly)" :coerce :boolean :default false}
+           :dir-only  {:desc "Output paths only (fzf-friendly)"        :coerce :boolean :default false}}}
+
+   {:cmds ["remove"]
+    :desc "Remove a worktree by branch name or path"
+    :fn cmd-remove/run
+    :args->opts [:path-or-branch]
+    :spec {:force {:alias :f :desc "Force removal" :coerce :boolean :default false}}}
+
+   {:cmds ["rm"]
+    :desc "Remove a worktree (alias for 'remove')"
+    :fn cmd-remove/run
+    :args->opts [:path-or-branch]
+    :spec {:force {:alias :f :desc "Force removal" :coerce :boolean :default false}}}
+
+   {:cmds ["merge"]
+    :desc "Merge a worktree branch into the current branch"
+    :fn cmd-merge/run
+    :args->opts [:branch-name]
+    :spec {:auto-commit {:desc "Auto-commit dirty worktree before merge" :coerce :boolean :default false}
+           :message     {:alias :m :desc "Commit message for --auto-commit"}}}
+
+   {:cmds ["purge"]
+    :desc "Interactively select and remove multiple worktrees"
+    :fn cmd-purge/run}
+
+   {:cmds ["open"]
+    :desc "Open a worktree in your editor"
+    :fn cmd-open/run
+    :args->opts [:path-or-branch]
+    :spec {:editor {:alias :e :desc "Editor to open (valid: cursor, idea, nvim, pycharm, sublime, vim, vimr, vscode, webstorm, zed). vim/nvim open in the current terminal session."}}}
+
+   {:cmds ["config" "set"]              :desc "Set a configuration value"                     :fn cmd-config/set!            :args->opts [:key :value]}
+   {:cmds ["config" "get"]              :desc "Get a configuration value"                     :fn cmd-config/get!            :args->opts [:key]}
+   {:cmds ["config" "clear"]            :desc "Clear a configuration value"                   :fn cmd-config/clear!          :args->opts [:key]}
+   {:cmds ["config" "path"]             :desc "Print path to config file"                     :fn cmd-config/show-path!}
+   {:cmds ["config" "set-editor-path"]  :desc "Override the executable path for a specific editor"  :fn cmd-config/set-editor-path!  :args->opts [:editor :path]}
+   {:cmds ["config" "get-editor-path"]  :desc "Get the executable path for an editor (override or default)"  :fn cmd-config/get-editor-path!  :args->opts [:editor]}])
+
+(defn- print-help []
+  (println "Usage: worktree <command> [options]")
+  (println)
+  (println "Commands:")
+  (println "  new <branch>          Create a new worktree")
+  (println "  setup <branch>        Create a worktree and run setup scripts")
+  (println "  list / ls             List all worktrees")
+  (println "  remove / rm [branch]  Remove a worktree")
+  (println "  merge <branch>        Merge a branch into current branch")
+  (println "  purge                 Interactively remove multiple worktrees")
+  (println "  open [branch]         Open a worktree in your editor")
+  (println "  config set/get/clear/path  Manage configuration")
+  (println)
+  (println "Run 'worktree <command> --help' for command-specific options."))
+
+(when (some #{"--help" "-h"} *command-line-args*)
+  (let [plain-args (remove #{"--help" "-h"} *command-line-args*)
+        entry      (some (fn [e]
+                           (let [cmds (vec (:cmds e))
+                                 n    (count cmds)]
+                             (when (= cmds (vec (take n plain-args)))
+                               e)))
+                         dispatch-table)]
+    (if entry
+      (println (help/format-cmd-help entry))
+      (print-help))
+    (System/exit 0)))
+
+(cli/dispatch dispatch-table *command-line-args*
+              {:error-fn (fn [{:keys [cause]}]
+                           (case cause
+                             :input-exhausted (print-help)
+                             :no-match        (do (println (str "Unknown command: "
+                                                               (first *command-line-args*)))
+                                                  (println)
+                                                  (print-help)
+                                                  (System/exit 1))))})

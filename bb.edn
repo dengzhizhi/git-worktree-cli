@@ -1,0 +1,27 @@
+{:min-bb-version "1.0.0"
+ :paths ["src" "test"]
+ :tasks
+ {test
+  {:doc "Run unit tests"
+   :task (do
+           (require 'commons.git-test)
+           (require 'commons.config-test)
+           (require 'commons.paths-test)
+           (require 'commons.tui-test)
+           (require 'commons.setup-test)
+           (require 'commands.list-test)
+           (require 'commons.help-test)
+           (require 'commands.config-test)
+           (require 'commands.open-test)
+           (let [r (clojure.test/run-tests
+                     'commons.git-test
+                     'commons.config-test
+                     'commons.paths-test
+                     'commons.tui-test
+                     'commons.setup-test
+                     'commands.list-test
+                     'commons.help-test
+                     'commands.config-test
+                     'commands.open-test)]
+             (when (pos? (+ (:fail r) (:error r)))
+               (System/exit 1))))}}}

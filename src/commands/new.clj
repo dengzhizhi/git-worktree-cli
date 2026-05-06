@@ -4,37 +4,10 @@
             [clojure.string :as str]
             [commons.atomic :as atomic]
             [commons.git :as git]
+            [commons.package :as package]
             [commons.paths :as paths]
-            [commons.tui :as tui]))
-
-(defn- run-package-manager
-  "Runs package manager install in the given directory."
-  [install-cmd dir]
-  (println (str "Running: " install-cmd " (in " dir ")"))
-  (let [result (p/shell {:continue true :dir dir} install-cmd)]
-    (when (not (zero? (:exit result)))
-      (println (str "Warning: package manager install exited with code " (:exit result))))))
-
-(defn create-or-use-worktree
-  "Creates a new worktree or reuses an existing one at path.
-   Returns the worktree path."
-  [branch-name path checkout install]
-  (if (and (fs/exists? path)
-           (fs/exists? (str path "/.git")))
-    (do (println (str "Using existing worktree at " path))
-        path)
-    (do
-      (atomic/with-atomic-rollback
-        (fn [register-rollback!]
-          (let [branch-exists (or (git/branch-exists-local? branch-name)
-                                  (when-let [remote (git/get-upstream-remote)]
-                                    (git/branch-exists-remote? branch-name remote)))
-                create-branch? (or checkout (not branch-exists))]
-            (println (str "Creating worktree for branch '" branch-name "' at " path "..."))
-            (atomic/create-worktree register-rollback! path branch-name create-branch?)
-            (when install
-              (run-package-manager install path)))))
-      path)))
+            [commons.tui :as tui]
+            [commons.worktree :as worktree]))
 
 (defn run
   "Create a new git worktree."
@@ -76,7 +49,7 @@
           (let [target-path (paths/resolve-worktree-path branch-name
                                                           {:custom-path (when path (name path))
                                                            :cwd (str (fs/cwd))})]
-            (create-or-use-worktree branch-name target-path checkout install)
+            (worktree/create-or-use-worktree branch-name target-path checkout install stash-hash)
             (println (str "Worktree ready at: " target-path)))
 
           (finally

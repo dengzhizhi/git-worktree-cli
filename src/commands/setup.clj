@@ -4,17 +4,11 @@
             [clojure.string :as str]
             [commons.atomic :as atomic]
             [commons.git :as git]
+            [commons.package :as package]
             [commons.paths :as paths]
             [commons.setup :as setup]
-            [commons.tui :as tui]))
-
-(defn- run-package-manager
-  "Runs package manager install in the given directory."
-  [install-cmd dir]
-  (println (str "Running: " install-cmd " (in " dir ")"))
-  (let [result (p/shell {:continue true :dir dir} install-cmd)]
-    (when (not (zero? (:exit result)))
-      (println (str "Warning: package manager install exited with code " (:exit result))))))
+            [commons.tui :as tui]
+            [commons.worktree :as worktree]))
 
 (defn run
   "Create a new git worktree and run setup scripts."
@@ -56,20 +50,8 @@
           (let [target-path (paths/resolve-worktree-path branch-name
                                                           {:custom-path (when path (name path))
                                                            :cwd (str (fs/cwd))})]
-            ;; Create worktree (same as new command)
-            (if (and (fs/exists? target-path)
-                     (fs/exists? (str target-path "/.git")))
-              (println (str "Using existing worktree at " target-path))
-              (atomic/with-atomic-rollback
-                (fn [register-rollback!]
-                  (let [branch-exists (or (git/branch-exists-local? branch-name)
-                                          (when-let [remote (git/get-upstream-remote)]
-                                            (git/branch-exists-remote? branch-name remote)))
-                        create-branch? (or checkout (not branch-exists))]
-                    (println (str "Creating worktree for branch '" branch-name "' at " target-path "..."))
-                    (atomic/create-worktree register-rollback! target-path branch-name create-branch?)
-                    (when install
-                      (run-package-manager install target-path))))))
+            ;; Create worktree (same as new command, using shared function)
+            (worktree/create-or-use-worktree branch-name target-path checkout install stash-hash)
 
             (println (str "Worktree ready at: " target-path))
 

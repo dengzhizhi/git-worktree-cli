@@ -52,6 +52,12 @@ Examples:
 
 **Dirty state handling:** If your current worktree has uncommitted changes, you'll be prompted to stash them (restored after), abort, or continue.
 
+**Error messages:**
+
+- `Error: cannot create worktree for current branch (main)` -- the specified branch is already checked out in the current repository and cannot have a separate worktree.
+- `Error: branch 'feature/login' is already checked out at '/path/to/worktree'` -- the specified branch has a worktree at the given path. Each branch can only have one active worktree.
+- `Failed to create worktree:` (followed by git's stderr) -- the `git worktree add` command failed for another reason (path already exists, nested path, permissions, etc.). The exact git error is shown below the prefix line.
+
 ## setup — Create Worktree + Run Scripts
 
 ```bash

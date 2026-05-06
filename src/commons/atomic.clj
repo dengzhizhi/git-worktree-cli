@@ -4,7 +4,9 @@
 
 (defn with-atomic-rollback
   "Runs operation-fn with a register-rollback! function. On success returns the result.
-   On exception, runs registered rollback actions in LIFO order, then re-throws."
+   On exception, runs registered rollback actions in LIFO order, then re-throws.
+   When no rollback actions were registered, prints 'Cleaning up...' / 'Done.' instead
+   of 'Rolling back...' / 'Rollback complete.'"
   [operation-fn]
   (let [rollback-actions (atom [])]
     (try
@@ -12,12 +14,16 @@
                                    (swap! rollback-actions conj rollback-thunk)))]
         result)
       (catch Exception e
-        (println "Rolling back changes...")
+        (if (empty? @rollback-actions)
+          (println "Cleaning up...")
+          (println "Rolling back changes..."))
         (doseq [action (reverse @rollback-actions)]
           (try (action)
                (catch Exception re
                  (println "Rollback step failed:" (.getMessage re)))))
-        (println "Rollback complete.")
+        (if (empty? @rollback-actions)
+          (println "Done.")
+          (println "Rollback complete."))
         (throw e)))))
 
 (defn create-worktree
@@ -26,11 +32,11 @@
    - create-branch? false → git worktree add <path> <branch>"
   [register-rollback! path branch create-branch?]
   (let [result (if create-branch?
-                 @(p/process "git" "worktree" "add" "-b" branch path)
-                 @(p/process "git" "worktree" "add" path branch))]
+                 @(p/process {:err :string} "git" "worktree" "add" "-b" branch path)
+                 @(p/process {:err :string} "git" "worktree" "add" path branch))]
     (when (not (zero? (:exit result)))
       (throw (ex-info (str "Failed to create worktree at " path)
-                      {:exit (:exit result)})))
+                      {:exit (:exit result) :err (:err result)})))
     (register-rollback!
       (fn []
         (println (str "Rolling back: removing worktree at " path "..."))

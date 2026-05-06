@@ -13,6 +13,9 @@
            (require 'commons.help-test)
            (require 'commands.config-test)
            (require 'commands.open-test)
+           (require 'commands.new-test)
+           (require 'commands.setup-test)
+           (require 'commons.atomic-test)
            (let [r (clojure.test/run-tests
                      'commons.git-test
                      'commons.config-test
@@ -22,6 +25,9 @@
                      'commands.list-test
                      'commons.help-test
                      'commands.config-test
-                     'commands.open-test)]
+                     'commands.open-test
+                     'commands.new-test
+                     'commands.setup-test
+                     'commons.atomic-test)]
              (when (pos? (+ (:fail r) (:error r)))
                (System/exit 1))))}}}

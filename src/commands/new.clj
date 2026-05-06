@@ -9,6 +9,10 @@
             [commons.tui :as tui]
             [commons.worktree :as worktree]))
 
+(def exit!
+  "Redefable exit for testing."
+  (fn [code] (System/exit code)))
+
 (defn run
   "Create a new git worktree."
   [{:keys [opts]}]
@@ -17,18 +21,18 @@
     ;; Validate we're in a git repo
     (when (nil? (git/get-repo-root))
       (println "Error: not inside a git repository")
-      (System/exit 1))
+      (exit! 1))
 
     ;; Validate branch name
     (when (nil? branch-name)
       (println "Usage: worktree new <branchName>")
-      (System/exit 1))
+      (exit! 1))
 
     (let [branch-name (name branch-name)
           validation  (paths/validate-branch-name branch-name)]
       (when-not (:valid? validation)
         (println (str "Error: " (:error validation)))
-        (System/exit 1))
+        (exit! 1))
 
       (let [is-bare  (git/is-main-repo-bare?)
             stash-hash (atom nil)]
@@ -39,7 +43,7 @@
               (when-not (git/is-worktree-clean? cwd)
                 (let [action (tui/handle-dirty-state nil)]
                   (case action
-                    :abort (do (println "Operation aborted.") (System/exit 0))
+                    :abort (do (println "Operation aborted.") (exit! 0))
                     :stash (let [hash (git/stash-changes cwd "worktree new: stash before creating")]
                              (reset! stash-hash hash)
                              (println (str "Stashed changes (hash: " hash ")")))

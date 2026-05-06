@@ -4,6 +4,10 @@
             [commons.git :as git]
             [commons.package :as package]))
 
+(def exit!
+  "Redefable exit for testing."
+  (fn [code] (System/exit code)))
+
 (defn create-or-use-worktree
   "Creates a new worktree or reuses an existing one at path.
    Returns the worktree path.
@@ -20,13 +24,13 @@
             (when @stash-hash
               (println "Restoring stashed changes...")
               (git/apply-stash @stash-hash (str (fs/cwd))))
-            (System/exit 1))
+            (exit! 1))
           (do
             (println (str "Error: branch '" branch-name "' is already checked out at '" (:path existing) "'"))
             (when @stash-hash
               (println "Restoring stashed changes...")
               (git/apply-stash @stash-hash (str (fs/cwd))))
-            (System/exit 1))))))
+            (exit! 1))))))
   ;; Use existing worktree at path or create new one
   (if (and (fs/exists? path)
            (fs/exists? (str path "/.git")))
@@ -50,4 +54,4 @@
           (when @stash-hash
             (println "Restoring stashed changes...")
             (git/apply-stash @stash-hash (str (fs/cwd))))
-          (System/exit 1))))))
+          (exit! 1))))))
